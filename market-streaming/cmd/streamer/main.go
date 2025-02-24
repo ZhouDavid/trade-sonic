@@ -56,17 +56,37 @@ func main() {
 		"GOOGL", // Google
 	}
 
-	// Create crypto streamer
-	cryptoStreamer, err := crypto.NewStreamer(apiKey, cryptoPairs)
+	// Create crypto streamer with retry
+	var cryptoStreamer *crypto.Streamer
+	var err error
+	for retries := 0; retries < 3; retries++ {
+		cryptoStreamer, err = crypto.NewStreamer(apiKey, cryptoPairs)
+		if err == nil {
+			break
+		}
+		log.Printf("Attempt %d: Error creating crypto streamer: %v. Waiting 5 seconds...", retries+1, err)
+		time.Sleep(5 * time.Second)
+	}
 	if err != nil {
-		log.Fatal("Error creating crypto streamer:", err)
+		log.Fatal("Failed to create crypto streamer after retries:", err)
 	}
 	defer cryptoStreamer.Close()
 
-	// Create stock streamer
-	stockStreamer, err := stock.NewStreamer(apiKey, stockSymbols)
+	// Wait before creating stock streamer to avoid rate limits
+	time.Sleep(2 * time.Second)
+
+	// Create stock streamer with retry
+	var stockStreamer *stock.Streamer
+	for retries := 0; retries < 3; retries++ {
+		stockStreamer, err = stock.NewStreamer(apiKey, stockSymbols)
+		if err == nil {
+			break
+		}
+		log.Printf("Attempt %d: Error creating stock streamer: %v. Waiting 5 seconds...", retries+1, err)
+		time.Sleep(5 * time.Second)
+	}
 	if err != nil {
-		log.Fatal("Error creating stock streamer:", err)
+		log.Fatal("Failed to create stock streamer after retries:", err)
 	}
 	defer stockStreamer.Close()
 
@@ -74,10 +94,14 @@ func main() {
 	cryptoStreamer.AddHandler(createTradeHandler("crypto"))
 	stockStreamer.AddHandler(createTradeHandler("stock"))
 
-	// Subscribe to both streams
+	// Subscribe to streams with delay between them
 	if err := cryptoStreamer.Subscribe(); err != nil {
 		log.Fatal("Error subscribing to crypto symbols:", err)
 	}
+
+	// Wait before subscribing to stock stream
+	time.Sleep(2 * time.Second)
+
 	if err := stockStreamer.Subscribe(); err != nil {
 		log.Fatal("Error subscribing to stock symbols:", err)
 	}

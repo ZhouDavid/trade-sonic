@@ -89,10 +89,50 @@ func (s *Streamer) Subscribe() error {
 // Stream starts streaming stock market data
 func (s *Streamer) Stream() error {
 	log.Printf("Starting to stream stock market data...")
+	backoff := time.Second
+	maxBackoff := 30 * time.Second
+
 	for {
 		_, message, err := s.conn.ReadMessage()
 		if err != nil {
-			return fmt.Errorf("error reading message: %w", err)
+			log.Printf("Connection error: %v. Attempting to reconnect...", err)
+			s.conn.Close()
+
+			// Reconnection loop
+			for {
+				log.Printf("Waiting %v before reconnecting...", backoff)
+				time.Sleep(backoff)
+
+				// Exponential backoff
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
+
+				// Try to reconnect
+				url := fmt.Sprintf("wss://ws.finnhub.io?token=%s", s.apiKey)
+				newConn, _, err := websocket.DefaultDialer.Dial(url, nil)
+				if err != nil {
+					log.Printf("Reconnection failed: %v", err)
+					continue
+				}
+
+				// Reconnected successfully
+				s.conn = newConn
+				log.Printf("Successfully reconnected to Finnhub stock websocket")
+
+				// Resubscribe to symbols
+				if err := s.Subscribe(); err != nil {
+					log.Printf("Error resubscribing to symbols: %v", err)
+					s.conn.Close()
+					continue
+				}
+
+				// Reset backoff after successful reconnection
+				backoff = time.Second
+				break
+			}
+			continue
 		}
 
 		var tradeData stream.TradeData
