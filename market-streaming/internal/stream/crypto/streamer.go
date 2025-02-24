@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 	"trade-sonic/market-streaming/internal/stream"
 
 	"github.com/gorilla/websocket"
@@ -11,28 +12,27 @@ import (
 
 // Streamer handles cryptocurrency data streaming
 type Streamer struct {
-	conn     *websocket.Conn
-	apiKey   string
-	symbols  []string
-	handlers []stream.TradeHandler
+	conn      *websocket.Conn
+	apiKey    string
+	symbols   []string
+	handlers  []stream.TradeHandler
+	connected bool
 }
 
 // NewStreamer creates a new crypto market data streamer
 func NewStreamer(apiKey string, symbols []string) (*Streamer, error) {
-	log.Printf("Connecting to Finnhub crypto websocket...")
-	url := fmt.Sprintf("wss://ws.finnhub.io?token=%s", apiKey)
-	c, resp, err := websocket.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error connecting to websocket: %w, response: %+v", err, resp)
+	s := &Streamer{
+		apiKey:    apiKey,
+		symbols:   symbols,
+		handlers:  make([]stream.TradeHandler, 0),
+		connected: false,
 	}
-	log.Printf("Successfully connected to Finnhub crypto websocket")
 
-	return &Streamer{
-		conn:     c,
-		apiKey:   apiKey,
-		symbols:  symbols,
-		handlers: make([]stream.TradeHandler, 0),
-	}, nil
+	if err := s.connect(); err != nil {
+		return nil, err
+	}
+
+	return s, nil
 }
 
 // AddHandler adds a new trade handler
@@ -53,21 +53,75 @@ func (s *Streamer) Subscribe() error {
 	return nil
 }
 
+// connect establishes a new websocket connection
+func (s *Streamer) connect() error {
+	log.Printf("Connecting to Finnhub crypto websocket...")
+	url := fmt.Sprintf("wss://ws.finnhub.io?token=%s", s.apiKey)
+	c, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		return fmt.Errorf("error connecting to websocket: %w, response: %+v", err, resp)
+	}
+	s.conn = c
+	s.connected = true
+	log.Printf("Successfully connected to Finnhub crypto websocket")
+	return nil
+}
+
 // Stream starts streaming crypto market data
 func (s *Streamer) Stream() error {
 	log.Printf("Starting to stream crypto market data...")
+
+	backoff := time.Second
+	maxBackoff := 30 * time.Second
+
 	for {
 		_, message, err := s.conn.ReadMessage()
 		if err != nil {
-			return fmt.Errorf("error reading message: %w", err)
+			log.Printf("Connection error: %v. Attempting to reconnect...", err)
+			s.conn.Close()
+			s.connected = false
+
+			// Reconnection loop
+			for {
+				log.Printf("Waiting %v before reconnecting...", backoff)
+				time.Sleep(backoff)
+
+				// Exponential backoff
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
+
+				// Try to reconnect
+				if err := s.connect(); err != nil {
+					log.Printf("Reconnection failed: %v", err)
+					continue
+				}
+
+				// Resubscribe to symbols
+				if err := s.Subscribe(); err != nil {
+					log.Printf("Error resubscribing to symbols: %v", err)
+					s.conn.Close()
+					s.connected = false
+					continue
+				}
+
+				// Reset backoff after successful reconnection
+				backoff = time.Second
+				break
+			}
+			continue
 		}
 
+		// Parse and handle the message
 		var tradeData stream.TradeData
-		if err := json.Unmarshal(message, &tradeData); err != nil {
+		err = json.Unmarshal(message, &tradeData)
+		if err != nil {
 			log.Printf("Error parsing message: %v", err)
 			continue
 		}
 
+		// Process trades if we have any
 		if tradeData.Type == "trade" {
 			for _, trade := range tradeData.Data {
 				for _, handler := range s.handlers {
