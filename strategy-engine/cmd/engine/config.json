@@ -1,0 +1,18 @@
+{
+    "queue": {
+        "address": "localhost:6379",
+        "channel": "market_data",
+        "groupId": "strategy_engine"
+    },
+    "strategies": [
+        {
+            "name": "simple_ma_cross",
+            "type": "moving_average_cross",
+            "parameters": {
+                "short_period": 10,
+                "long_period": 20,
+                "symbols": ["BTC-USD", "ETH-USD"]
+            }
+        }
+    ]
+}
