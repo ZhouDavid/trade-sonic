@@ -6,12 +6,10 @@
     },
     "strategies": [
         {
-            "name": "simple_ma_cross",
-            "type": "moving_average_cross",
+            "name": "btc_stop_loss",
+            "type": "stop_loss",
             "parameters": {
-                "short_period": 10,
-                "long_period": 20,
-                "symbols": ["BTC-USD", "ETH-USD"]
+                "max_drawdown_percent": 5.0
             }
         }
     ]
