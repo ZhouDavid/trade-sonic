@@ -1,0 +1,6 @@
+{
+    "robinhood": {
+        "username": "your_robinhood_username",
+        "password": "your_robinhood_password"
+    }
+}
