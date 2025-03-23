@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -20,15 +21,21 @@ const (
 )
 
 type cachedToken struct {
-	AccessToken string
-	ExpiresAt   time.Time
+	AccessToken string    `json:"access_token"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+// tokenCache represents the structure of the persisted token cache file
+type tokenCacheFile struct {
+	Tokens map[AccountType]*cachedToken `json:"tokens"`
 }
 
 type Service struct {
-	client      *http.Client
-	tokenCache  map[AccountType]*cachedToken
-	cacheMutex  sync.RWMutex
-	credentials map[AccountType]accountCredentials
+	client        *http.Client
+	tokenCache    map[AccountType]*cachedToken
+	cacheMutex    sync.RWMutex
+	credentials   map[AccountType]accountCredentials
+	cacheFilePath string
 }
 
 type accountCredentials struct {
@@ -59,12 +66,19 @@ func NewService() (*Service, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	// Ensure data directory exists
+	dataDir := "./data"
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %w", err)
+	}
+
 	s := &Service{
 		client: &http.Client{
 			Timeout: time.Second * 30,
 		},
-		tokenCache:  make(map[AccountType]*cachedToken),
-		credentials: make(map[AccountType]accountCredentials),
+		tokenCache:    make(map[AccountType]*cachedToken),
+		credentials:   make(map[AccountType]accountCredentials),
+		cacheFilePath: filepath.Join(dataDir, "token_cache.json"),
 	}
 
 	// Load credentials from config
@@ -73,7 +87,65 @@ func NewService() (*Service, error) {
 		password: cfg.Robinhood.Password,
 	}
 
+	// Load cached tokens from file
+	if err := s.loadTokenCache(); err != nil {
+		// Just log the error but continue - it's not fatal if we can't load the cache
+		fmt.Printf("Warning: Failed to load token cache: %v\n", err)
+	}
+
 	return s, nil
+}
+
+// loadTokenCache loads the token cache from disk
+func (s *Service) loadTokenCache() error {
+	// Check if cache file exists
+	if _, err := os.Stat(s.cacheFilePath); os.IsNotExist(err) {
+		// File doesn't exist yet, which is fine for first run
+		return nil
+	}
+
+	data, err := os.ReadFile(s.cacheFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read token cache file: %w", err)
+	}
+
+	var cache tokenCacheFile
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return fmt.Errorf("failed to parse token cache: %w", err)
+	}
+
+	// Only load tokens that haven't expired yet
+	now := time.Now()
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+
+	for accountType, token := range cache.Tokens {
+		if now.Before(token.ExpiresAt) {
+			s.tokenCache[accountType] = token
+		}
+	}
+
+	return nil
+}
+
+// saveTokenCache persists the token cache to disk
+func (s *Service) saveTokenCache() error {
+	s.cacheMutex.RLock()
+	cache := tokenCacheFile{
+		Tokens: s.tokenCache,
+	}
+	s.cacheMutex.RUnlock()
+
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return fmt.Errorf("failed to marshal token cache: %w", err)
+	}
+
+	if err := os.WriteFile(s.cacheFilePath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write token cache file: %w", err)
+	}
+
+	return nil
 }
 
 // GetToken returns a valid token for the specified account type
@@ -112,6 +184,12 @@ func (s *Service) GetToken(accountType AccountType) (*TokenResponse, error) {
 		ExpiresAt:   expiresAt,
 	}
 	s.cacheMutex.Unlock()
+	
+	// Persist the token cache
+	if err := s.saveTokenCache(); err != nil {
+		// Just log the error but continue - it's not fatal if we can't save the cache
+		fmt.Printf("Warning: Failed to save token cache: %v\n", err)
+	}
 
 	return &TokenResponse{
 		AccessToken: token,
