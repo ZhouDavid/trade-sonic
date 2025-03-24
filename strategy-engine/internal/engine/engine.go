@@ -9,9 +9,9 @@ import (
 
 // Engine manages the lifecycle of strategies and signal processing
 type Engine struct {
-	strategies     map[string]strategy.Strategy
-	signalHandler  strategy.SignalHandler
-	mu             sync.RWMutex
+	strategies    map[string]strategy.Strategy
+	signalHandler strategy.SignalHandler
+	mu            sync.RWMutex
 }
 
 // NewEngine creates a new strategy engine
@@ -83,7 +83,7 @@ func (e *Engine) GetStrategy(name string) (strategy.Strategy, bool) {
 func (e *Engine) ListStrategies() []string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	
+
 	names := make([]string, 0, len(e.strategies))
 	for name := range e.strategies {
 		names = append(names, name)
