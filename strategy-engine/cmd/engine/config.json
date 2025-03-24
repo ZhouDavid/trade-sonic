@@ -6,10 +6,10 @@
     },
     "strategies": [
         {
-            "name": "btc_stop_loss",
+            "name": "option_stop_loss",
             "type": "stop_loss",
             "parameters": {
-                "max_drawdown_percent": 5.0
+                "max_drawdown_percent": 10.0
             }
         }
     ]

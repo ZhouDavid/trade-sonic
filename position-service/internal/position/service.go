@@ -220,9 +220,6 @@ func (s *Service) fetchRobinhoodPositions(token string) (*PositionList, error) {
 			costBasis = 0.0
 		}
 
-		// Debug output for cost basis
-		fmt.Printf("  Cost Basis: $%.2f\n", costBasis)
-
 		// Parse timestamps
 		createdAt, _ := time.Parse(time.RFC3339, posItem.CreatedAt)
 		updatedAt, _ := time.Parse(time.RFC3339, posItem.UpdatedAt)

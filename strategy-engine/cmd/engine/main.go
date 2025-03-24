@@ -89,12 +89,19 @@ func main() {
 	// WaitGroup for coordinating shutdown
 	var wg sync.WaitGroup
 
-	// Start market data consumer
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		consumeMarketData(ctx, strategyEngine, config)
-	}()
+	// Initialize each strategy individually
+	for _, stratName := range strategyEngine.ListStrategies() {
+		strat, exists := strategyEngine.GetStrategy(stratName)
+		if exists {
+			if err := strat.Initialize(ctx); err != nil {
+				log.Printf("Error initializing strategy %s: %v\n", stratName, err)
+			} else {
+				log.Printf("Strategy %s initialized successfully\n", stratName)
+			}
+		}
+	}
+	
+	log.Println("Option stop loss strategy started and monitoring positions")
 
 	// Wait for shutdown signal
 	<-sigChan
@@ -119,7 +126,13 @@ func loadConfig() *Config {
 	configFile := filepath.Join(filepath.Dir(execPath), "config.json")
 	// Also check in the current directory as fallback
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		configFile = "strategy-engine/cmd/engine/config.json"
+		// Try the config file in the cmd/engine directory
+		configFile = "cmd/engine/config.json"
+		
+		// If that doesn't exist, try with full path
+		if _, err := os.Stat(configFile); os.IsNotExist(err) {
+			configFile = "strategy-engine/cmd/engine/config.json"
+		}
 	}
 	data, err := os.ReadFile(configFile)
 	if err != nil {
