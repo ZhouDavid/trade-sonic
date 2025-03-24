@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/trade-sonic/position-service/internal/position"
@@ -11,12 +12,19 @@ func main() {
 	// Create a new Gin router
 	r := gin.Default()
 
+	// Get Robinhood account ID from environment variable or use a default for development
+	accountID := os.Getenv("ROBINHOOD_ACCOUNT_ID")
+	if accountID == "" {
+		accountID = "507617876"
+		log.Printf("Warning: Using default account ID. Set ROBINHOOD_ACCOUNT_ID environment variable for production.")
+	}
+
 	// Initialize the token client
 	// Assuming the token service is running on localhost:8080
 	tokenClient := position.NewTokenClient("http://localhost:8080")
 
-	// Initialize the position service
-	positionService := position.NewService(tokenClient)
+	// Initialize the position service with the account ID
+	positionService := position.NewService(tokenClient, accountID)
 
 	// Initialize the position handler
 	handler := position.NewHandler(positionService)
